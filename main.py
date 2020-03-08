@@ -1,28 +1,24 @@
 #!/usr/bin/env python
-# coding: utf-8
 
-# In[2]:
-
+# Useful documentation:
+# https://cloud.google.com/blog/products/ai-machine-learning/how-to-serve-deep-learning-models-using-tensorflow-2-0-with-cloud-functions
 
 import numpy as np
 import pandas as pd
-import matplotlib
-import seaborn
-from sklearn.metrics import f1_score
-import re
-import statsmodels.formula.api
-
-from sklearn.linear_model import SGDClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.model_selection import train_test_split
-from sklearn.metrics import accuracy_score
 import pickle
-import numpy as np
 import json
 from scipy import stats
+from google.cloud import storage
+import os
+import logging
+import re
 
+# ########## 1. PREPARE ########## #
 
-# In[3]:
+# Define models in the global context to support warm starts
+embeddings = None
+model_initial = None
+model_final = None
 
 
 def load_embeddings(filename):
@@ -47,33 +43,82 @@ def load_embeddings(filename):
     return pd.DataFrame(arr, index=labels, dtype='f')
 
 
-# In[4]:
+def download_blob(bucket_name, source_blob_name, target_file_name):
+    """
+    Download model artifacts stored as blobs in GCP Storage
+    """
+
+    try:
+        # Connect to Storage
+        storage_client = storage.Client()
+        bucket = storage_client.get_bucket(bucket_name)
+
+        # Instantiate model Storage blobs
+        blob = bucket.blob(source_blob_name)
+
+        # Download model blobs
+        print(f'Downloading blob: {source_blob_name}')
+        blob.download_to_filename(target_file_name)
+        print(f'Blob {source_blob_name} successfully'
+              f' downloaded to {target_file_name}')
+    except Exception as err:
+        logging.error(err)
+        raise err
 
 
-embeddings = load_embeddings('C:/Users/944382/Desktop/Sentiment Analysis Playaround/glove.42B.300d.txt')
-embeddings.shape
+def load_models():
+    """
+    Download and load embeddings and models if they don't already exist in the
+    temporary file system (i.e. the cloud function is being run coldly).
+    """
 
-# In[5]:
+    global embeddings
+    global model_initial
+    global model_final
 
+    if embeddings is None:
+        download_blob(
+            bucket_name=os.environ['BUCKET_NAME'],
+            source_blob_name=os.environ['EMBEDDINGS_BLOB'],
+            target_file_name=os.environ['EMBEDDINGS_FILENAME']
+        )
+        embeddings = load_embeddings(os.environ['EMBEDDINGS_FILENAME'])
 
-model_initial = pickle.load(open(r'C:\Users\944382\Desktop\Sentiment Analysis Playaround\initial_model.sav', 'rb'))
+    if model_initial is None:
+        download_blob(
+            bucket_name=os.environ['BUCKET_NAME'],
+            source_blob_name=os.environ['MODEL_INITIAL_BLOB'],
+            target_file_name=os.environ['MODEL_INITIAL_FILENAME']
+        )
+        model_initial = pickle.load(
+            open(os.environ['MODEL_INITIAL_FILENAME'], 'rb')
+        )
 
-# In[6]:
+    if model_final is None:
+        download_blob(
+            bucket_name=os.environ['BUCKET_NAME'],
+            source_blob_name=os.environ['MODEL_FINAL_BLOB'],
+            target_file_name=os.environ['MODEL_FINAL_FILENAME']
+        )
+        model_final = pickle.load(
+            open(os.environ['MODEL_FINAL_FILENAME'], 'rb')
+        )
 
-
-model_final = pickle.load(open(r'C:\Users\944382\Desktop\Sentiment Analysis Playaround\rf_model.sav', 'rb'))
-
-
-# In[7]:
+# ########## 2. EXECUTE ########## #
 
 
 def words_to_sentiment(words):
+    global embeddings
+
     vecs = embeddings.loc[words].dropna()
     log_odds = vecs_to_sentiment(vecs)
+
     return pd.DataFrame({'sentiment': log_odds}, index=vecs.index)
 
 
 def vecs_to_sentiment(vecs):
+    global model_initial
+
     # predict_log_proba gives the log probability for each class
     predictions = model_initial.predict_log_proba(vecs)
 
@@ -83,85 +128,76 @@ def vecs_to_sentiment(vecs):
     return predictions[:, 1] - predictions[:, 0]
 
 
-# In[8]:
-
-
-import re
-
-TOKEN_RE = re.compile(r"\w.*?\b")
-
-
-# The regex above finds tokens that start with a word-like character (\w), and continues
-# matching characters (.+?) until the next word break (\b). It's a relatively simple
-# expression that manages to extract something very much like words from text.
-
-
 def text_to_sentiment(text):
-    tokens = [token.casefold() for token in TOKEN_RE.findall(text)]
+    # The regex below finds tokens that start with a word-like character (\w),
+    # and continues matching characters (.+?) until the next word break (\b).
+    # It's a relatively simple expression that manages to extract something very
+    # much like words from text.
+    token_re = re.compile(r"\w.*?\b")
+
+    tokens = [token.casefold() for token in token_re.findall(text)]
     sentiments = words_to_sentiment(tokens)
     return sentiments['sentiment'].to_frame()
 
 
-# In[9]:
+def tweet_positivity_scorer(tweet):
+    global embeddings
+    global model_final
 
+    text = text_to_sentiment(tweet)
 
-test = text_to_sentiment("Hi how are you")
+    text["Positivity_Score_y"] = text["sentiment"].mean()
 
-
-# In[10]:
-
-
-def Tweet_Positivity_scorer(tweet):
-    Text = text_to_sentiment(tweet)
-    Text["Positivity_Score_y"] = Text["sentiment"].mean()
     try:
-        Text["Positivity_Score_SD"] = Text["sentiment"].std()
+        text["Positivity_Score_SD"] = text["sentiment"].std()
     except:
-        Text["Positivity_Score_SD"] = 0
-    Text.loc[Text['sentiment'] < 0, 'Positivity_Score_z_temp'] = 'Negative Number'
-    Text.loc[Text['sentiment'] > 0, 'Positivity_Score_z_temp'] = 'Positive Number'
-    Text["Positive_Score_z"] = Text.groupby('Positivity_Score_y')["Positivity_Score_z_temp"].transform(
+        text["Positivity_Score_SD"] = 0
+
+    text.loc[text['sentiment'] < 0, 'Positivity_Score_z_temp'] = 'Negative Number'
+    text.loc[text['sentiment'] > 0, 'Positivity_Score_z_temp'] = 'Positive Number'
+
+    text["Positive_Score_z"] = text.groupby('Positivity_Score_y')["Positivity_Score_z_temp"].transform(
         lambda x: x.mode().iloc[0])
-    Text["Positivity_score_x"] = Text['sentiment']
-    del Text['sentiment']
-    del Text["Positivity_Score_z_temp"]
-    Text["Word"] = Text.index
+    text["Positivity_score_x"] = text['sentiment']
+
+    del text['sentiment']
+    del text["Positivity_Score_z_temp"]
+
+    text["Word"] = text.index
+
     embeddings["Word"] = embeddings.index
-    Text = pd.merge(Text, embeddings, on="Word", how="left")
-    del Text["Word"]
+
+    text = pd.merge(text, embeddings, on="Word", how="left")
+
+    del text["Word"]
     del embeddings["Word"]
-    Text = pd.get_dummies(Text, columns=['Positive_Score_z'])
+
+    text = pd.get_dummies(text, columns=['Positive_Score_z'])
+
     for i in ("Positive_Score_z_Positive Number", "Positive_Score_z_Negative Number",
               "Positive_Score_z_['Negative Number' 'Positive Number']"):
-        if i not in Text.columns:
-            Text[i] = 0
+        if i not in text.columns:
+            text[i] = 0
+
     try:
-        output = ((stats.mode(model_final.predict(Text)))[0][0])
+        output = ((stats.mode(model_final.predict(text)))[0][0])
     except:
         output = 2
-    if output == 4 and Text["Positivity_Score_y"][0] > 0.5 and Text["Positive_Score_z_Positive Number"][0] == 1:
-        return (tweet, abs(Text["Positivity_Score_y"][0]), "Positive Tweet")
+
+    if output == 4 and text["Positivity_Score_y"][0] > 0.5 and text["Positive_Score_z_Positive Number"][0] == 1:
+        return (tweet, abs(text["Positivity_Score_y"][0]), "Positive Tweet")
     else:
-        return (tweet, -abs(Text["Positivity_Score_y"][0]), "Bad Tweet")
+        return (tweet, -abs(text["Positivity_Score_y"][0]), "Bad Tweet")
 
 
-# In[20]:
+def moody():
+    score = tweet_positivity_scorer("We will get this to work")
 
+    json_dict = dict()
+    json_dict['tweet'] = score[0]
+    json_dict['positivity_score'] = score[1]
+    json_dict['positivity_rating'] = score[2]
+    print(json_dict)
 
-score = Tweet_Positivity_scorer("We will get this to work")
-
-# In[21]:
-
-
-json_dict = dict()
-json_dict['tweet'] = score[0]
-json_dict['positivity_score'] = score[1]
-json_dict['positivity_rating'] = score[2]
-print(json_dict)
-
-# In[22]:
-
-
-app_json = json.dumps(json_dict)
-print(app_json)
-
+    app_json = json.dumps(json_dict)
+    print(app_json)
