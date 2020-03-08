@@ -190,15 +190,30 @@ def tweet_positivity_scorer(tweet):
         return (tweet, -abs(text["Positivity_Score_y"][0]), "Bad Tweet")
 
 
-def moody():
+def moody(request):
+    """
+    HTTP Cloud Function.
+    Args:
+        request (flask.Request): The request object.
+            <http://flask.pocoo.org/docs/1.0/api/#flask.Request>
+    Returns:
+        The response text, or any set of values that can be turned into a
+        Response object using `make_response`
+        <http://flask.pocoo.org/docs/1.0/api/#flask.Flask.make_response>.
+    """
+
     try:
         score = tweet_positivity_scorer("We will get this to work")
 
         print('Alvin model successfully ran!')
         print(score)
+
+        return score
     except Exception as err:
         logging.error('Alvin model fucked up!')
         logging.error(err)
+
+        return 'Fucked up!'
 
     # json_dict = dict()
     # json_dict['tweet'] = score[0]
