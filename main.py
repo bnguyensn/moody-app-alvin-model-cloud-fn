@@ -191,13 +191,20 @@ def tweet_positivity_scorer(tweet):
 
 
 def moody():
-    score = tweet_positivity_scorer("We will get this to work")
+    try:
+        score = tweet_positivity_scorer("We will get this to work")
 
-    json_dict = dict()
-    json_dict['tweet'] = score[0]
-    json_dict['positivity_score'] = score[1]
-    json_dict['positivity_rating'] = score[2]
-    print(json_dict)
+        print('Alvin model successfully ran!')
+        print(score)
+    except Exception as err:
+        logging.error('Alvin model fucked up!')
+        logging.error(err)
 
-    app_json = json.dumps(json_dict)
-    print(app_json)
+    # json_dict = dict()
+    # json_dict['tweet'] = score[0]
+    # json_dict['positivity_score'] = score[1]
+    # json_dict['positivity_rating'] = score[2]
+    # print(json_dict)
+    #
+    # app_json = json.dumps(json_dict)
+    # print(app_json)
