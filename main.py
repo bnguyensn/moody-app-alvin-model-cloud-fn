@@ -203,10 +203,13 @@ def moody(request):
     """
 
     try:
-        score = tweet_positivity_scorer("We will get this to work")
+        print('Loading models...')
+        load_models()
+        print('Models loaded successfully!')
 
-        print('Alvin model successfully ran!')
-        print(score)
+        print('Calling tweet_positivity_scorer')
+        score = tweet_positivity_scorer("We will get this to work")
+        print(f'Alvin model successfully ran! Result = {score}')
 
         return score
     except Exception as err:
