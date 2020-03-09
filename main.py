@@ -130,6 +130,8 @@ def load_models_own_server():
         embeddings = pd.read_pickle(
             Path(os.environ['EMBEDDINGS_POSTDOC_FILENAME'])
         )
+
+        print('Finished loading models')
     except Exception as err:
         print(err)
 
