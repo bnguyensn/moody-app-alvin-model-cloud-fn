@@ -1,27 +1,78 @@
+import os
+from pathlib import Path
+import pickle
 from flask import Flask, request
 from markupsafe import escape
+from main import moody, load_models
 
-app = Flask(__name__)
+# Define environment variables
+os.environ['EMBEDDINGS_FILENAME'] = 'model/embeddings.txt'
+os.environ['EMBEDDINGS_POSTDOC_FILENAME'] = 'model/embeddings_postdoc.pickle'
+os.environ['INITIAL_MODEL_FILENAME'] = 'model/initial_model.sav'
+os.environ['FINAL_MODEL_FILENAME'] = 'model/final_model.sav'
+os.environ['IS_CLOUD_FN'] = 'false'
 
 
-@app.route('/')
-def ping():
-    return 'Flask server running normally'
+# Load models
+# def load_models():
+#     try:
+#         print('Loading initial model...')
+#         f1 = open(Path(os.environ['INITIAL_MODEL_FILENAME']), 'rb')
+#         model_initial = pickle.load(f1)
+#         f1.close()
+#
+#         print('Loading final model...')
+#         f2 = open(Path(os.environ['FINAL_MODEL_FILENAME']), 'rb')
+#         model_final = pickle.load(f2)
+#         f2.close()
+#
+#         print('Loading embeddings...')
+#         f3 = open(Path(os.environ['EMBEDDINGS_POSTDOC_FILENAME']), 'rb')
+#         embeddings = pickle.load(f3)
+#         f3.close()
+#
+#         return model_initial, model_final, embeddings
+#     except Exception as err:
+#         print(err)
 
 
-@app.route('/message')
-def get_sentiment():
-    message = request.args.get('m')
+# Initialize the Flask server
+def create_app():
+    # Create the application
+    app = Flask(__name__)
+
+    # Load model files
+    # model_files = load_models()
+    load_models()
 
     try:
-        if message is None or len(message) == 0:
-            return 'Message is empty', 401
+        os.makedirs(app.instance_path)
+    except OSError:
+        pass
 
-        return escape(message)
+    @app.route('/')
+    def ping():
+        return 'Flask server running normally'
 
-        # Run the message through the sentiment function
-        # sentiment = get_sentiment(message)
-        # return sentiment
-    except Exception as err:
-        return f'{err}', 401
+    @app.route('/message')
+    def get_sentiment():
+        message = request.args.get('m')
+
+        try:
+            if message is None or len(message) == 0:
+                return 'Message is empty', 401
+
+            # Run the message through the sentiment function, then return the
+            # sentiment
+            return {
+                'data': moody(message)
+            }
+        except Exception as err:
+            return f'{err}', 401
+
+    if __name__ == '__main__':
+        app.run(host='0.0.0.0')
+
+    return app
+
 

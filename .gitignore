@@ -134,3 +134,8 @@ dmypy.json
 .vscode
 .idea
 
+# Model files
+model/
+
+# Misc.
+ignore/
