@@ -177,44 +177,53 @@ def text_to_sentiment(text):
     return sentiments['sentiment'].to_frame()
 
 
-def tweet_positivity_scorer(message):
-    text = text_to_sentiment(message)
-    if len(text) != 1:
-        text["Positivity_Score_y"] = text["sentiment"].mean()
+def tweet_positivity_scorer(tweet):
+    Text = text_to_sentiment(tweet)
+    length = len(Text)
+    if len(Text) != 1:
+        Text["Positivity_Score_y"] = Text["sentiment"].mean()
         try:
-            text["Positivity_Score_SD"] = text["sentiment"].std()
+            Text["Positivity_Score_SD"] = Text["sentiment"].std()
         except:
-            text["Positivity_Score_SD"] = 0
-        text.loc[text['sentiment'] < 0, 'Positivity_Score_z_temp'] = 'Negative Number'
-        text.loc[text['sentiment'] > 0, 'Positivity_Score_z_temp'] = 'Positive Number'
-        text["Positive_Score_z"] = text.groupby('Positivity_Score_y')["Positivity_Score_z_temp"].transform(lambda x: x.mode().iloc[0])
-        text["Positivity_score_x"] = text['sentiment']
-        del text['sentiment']
-        del text["Positivity_Score_z_temp"]
-        text["Word"] = text.index
-        embeddings["Word"] = embeddings.index
-        text = pd.merge(text,embeddings,on="Word",how="left")
-        del text["Word"]
-        del embeddings["Word"]
-        text = pd.get_dummies(text, columns=['Positive_Score_z'])
+            Text["Positivity_Score_SD"] = 0
+        Text.loc[Text['sentiment'] < 0, 'Positivity_Score_z_temp'] = 'Negative Number'
+        Text.loc[Text['sentiment'] > 0, 'Positivity_Score_z_temp'] = 'Positive Number'
+        Text["Positive_Score_z"] = Text.groupby('Positivity_Score_y')["Positivity_Score_z_temp"].transform(lambda x: x.mode().iloc[0])
+        Text["Positivity_score_x"] = Text['sentiment']
+        del Text['sentiment']
+        del Text["Positivity_Score_z_temp"]
+        embedding = embeddings.loc[Text.index].dropna()
+        Text["Word"] = Text.index
+        embedding["Word"] = embedding.index
+        Text = pd.merge(Text,embedding,on="Word",how="left")
+        del Text["Word"]
+        del embedding["Word"]
+        Text = pd.get_dummies(Text, columns=['Positive_Score_z'])
         for i in ("Positive_Score_z_Positive Number","Positive_Score_z_Negative Number","Positive_Score_z_['Negative Number' 'Positive Number']"):
-            if i not in text.columns:
-                text[i] = 0
+            if i not in Text.columns:
+                Text[i] = 0
         try:
-            output = ((stats.mode(model_final.predict(text)))[0][0])
+            output = ((stats.mode(model_final.predict(Text)))[0][0])
+            print(output)
         except:
             output = 2
-        if output == 4 and text["Positivity_Score_y"][0] > 0.5 and text["Positive_Score_z_Positive Number"][0]==1:
-            return (message, abs(text["Positivity_Score_y"][0]), "Positive Tweet")
+        if output == 4 and Text["Positivity_Score_y"][0] > 0.5 and Text["Positive_Score_z_Positive Number"][0]==1:
+            return (tweet, abs(Text["Positivity_Score_y"][0]),"Positive Tweet")
+
+        elif length == 2:
+            if Text["Positivity_Score_y"][0] >0:
+                return (tweet, (Text["Positivity_Score_y"][0]),"Positive Tweet")
+            else:
+                return (tweet, (Text["Positivity_Score_y"][0]),"Negative Tweet")
         else:
-            return (message, -abs(text["Positivity_Score_y"][0]), "Bad Tweet")
+            return (tweet, -abs(Text["Positivity_Score_y"][0]),"Bad Tweet")
     else:
-        Score = text.iloc[0][0]
+        Score = Text.iloc[0][0]
         if Score > 0:
             Sentiment = 'Positive'
         else:
             Sentiment = 'Negative'
-        return message, text.iloc[0][0], Sentiment
+        return (tweet, Text.iloc[0][0],Sentiment)
 
 
 def moody(message):
