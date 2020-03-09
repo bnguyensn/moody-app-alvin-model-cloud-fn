@@ -70,12 +70,8 @@ def create_app():
         except Exception as err:
             return f'{err}', 401
 
-    if __name__ == '__main__':
-        app.run(host='0.0.0.0')
-
     return app
 
 
-if __name__ == "__main__":
-    app = create_app()
-    app.run(host='0.0.0.0')
+app = create_app()
+
