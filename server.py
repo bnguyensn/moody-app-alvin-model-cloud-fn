@@ -73,10 +73,13 @@ def create_app():
                 res.headers.add('Access-Control-Allow-Methods', "*")
                 return res, 401
 
+            # Limit the message's length
+            processed_message = message.strip()[:255]
+
             # Run the message through the sentiment function, then return the
             # sentiment
             res = make_response({
-                'data': moody(message)
+                'data': moody(processed_message)
             })
             res.headers.add("Access-Control-Allow-Origin", "*")
             res.headers.add('Access-Control-Allow-Headers', "*")
