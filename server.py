@@ -1,9 +1,10 @@
 import os
 from pathlib import Path
 import pickle
-from flask import Flask, request
+from flask import Flask, request, make_response
 from markupsafe import escape
 from main import moody, load_models
+from flask_cors import CORS, cross_origin
 
 # Define environment variables
 os.environ['EMBEDDINGS_FILENAME'] = 'model/embeddings.txt'
@@ -40,6 +41,8 @@ os.environ['IS_CLOUD_FN'] = 'false'
 def create_app():
     # Create the application
     app = Flask(__name__)
+    cors = CORS(app)
+    app.config['CORS_HEADERS'] = 'Content-Type'
 
     # Load model files
     # model_files = load_models()
@@ -52,7 +55,11 @@ def create_app():
 
     @app.route('/')
     def ping():
-        return 'Flask server running normally'
+        res = make_response('Flask server running normally')
+        res.headers.add("Access-Control-Allow-Origin", "*")
+        res.headers.add('Access-Control-Allow-Headers', "*")
+        res.headers.add('Access-Control-Allow-Methods', "*")
+        return res
 
     @app.route('/message')
     def get_sentiment():
@@ -60,18 +67,29 @@ def create_app():
 
         try:
             if message is None or len(message) == 0:
-                return 'Message is empty', 401
+                res = make_response('Message is empty')
+                res.headers.add("Access-Control-Allow-Origin", "*")
+                res.headers.add('Access-Control-Allow-Headers', "*")
+                res.headers.add('Access-Control-Allow-Methods', "*")
+                return res, 401
 
             # Run the message through the sentiment function, then return the
             # sentiment
-            return {
+            res = make_response({
                 'data': moody(message)
-            }
+            })
+            res.headers.add("Access-Control-Allow-Origin", "*")
+            res.headers.add('Access-Control-Allow-Headers', "*")
+            res.headers.add('Access-Control-Allow-Methods', "*")
+            return res
         except Exception as err:
-            return f'{err}', 401
+            res = make_response(f'{err}')
+            res.headers.add("Access-Control-Allow-Origin", "*")
+            res.headers.add('Access-Control-Allow-Headers', "*")
+            res.headers.add('Access-Control-Allow-Methods', "*")
+            return res, 401
 
     return app
 
 
 app = create_app()
-
